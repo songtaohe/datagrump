@@ -383,7 +383,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     d_std = Std(delay_list + counter - window, window);
     d_avg = Mean(delay_list + counter - window, window);
 
-    double mean_tp = 75.0 - alpha;
+    double mean_tp = P_L0 - alpha;
 
     mean_pf = min(max((mean_tp*2-d_avg)/mean_tp,0.0),10.0);
     mean_nf = 1.0 + max((d_avg-mean_tp)/mean_tp,-1.0);
