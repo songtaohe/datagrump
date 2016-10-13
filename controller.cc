@@ -4,6 +4,7 @@
 
 #include "controller.hh"
 #include "timestamp.hh"
+#include "parameter.h"
 
 using namespace std;
 
@@ -244,10 +245,15 @@ double Std(double* ptr, int n)
 double dir(double* ptr, int n)
 {
   double ret = 0;
+  double mmax = 0;
+  double mmin = 0;
   for(int i = 0; i<n-1; i++)
+  {
     ret = ret + ptr[i+1] - ptr[i];
-
-  return ret/(n-1);
+    if(ptr[i+1]-ptr[i] > mmax) mmax = ptr[i+1] - ptr[i];
+    if(ptr[i+1]-ptr[i] < mmin) mmin = ptr[i+1] - ptr[i];
+  }
+  return (ret-mmax-mmin)/(n-3);
 }
 
 double dir_exp(double* ptr, int n)
@@ -303,6 +309,9 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
   static int counter = 0;
 
+  //static int lastpeak = 0;
+
+
 
   if(delay_list == NULL)
   {
@@ -314,7 +323,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     window_list = (double*)malloc(sizeof(double)*65536*2);
   }
 
-  int window = 32;
+  int window = P_WINDOW;
 
   double w_old_avg = 0;
   double w_cur_avg = 0;
@@ -339,8 +348,21 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   double feedback_avg = 0;
 
 
-  double alpha = 0.0;
-  double beta = 0.14;
+  static double alpha = 0.01;
+  static double beta = 0.14;
+  static double lambda = 1.005;
+
+
+  beta = P_BETA / 10.0;
+  
+  
+
+
+
+  if(delay > 100) alpha = 0.01;
+  else alpha = alpha * lambda;
+
+  alpha = 0;
 
   //if(delay > 100) alpha = 0.4;
   //else alpha = 0.0;
@@ -351,11 +373,11 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     w_old_avg = Mean(window_list + counter - window*2, window);
     w_cur_avg = Mean(window_list + counter - window, window);
     
-    d_dir = dir_power(delay_list + counter - window, window);
+    d_dir = dir(delay_list + counter - window, window);
     d_std = Std(delay_list + counter - window, window);
     d_avg = Mean(delay_list + counter - window, window);
 
-    double mean_tp = 75.0;
+    double mean_tp = 75.0 - alpha;
 
     mean_pf = min(max((mean_tp*2-d_avg)/mean_tp,0.0),10.0);
     mean_nf = 1.0 + max((d_avg-mean_tp)/mean_tp,-1.0);
@@ -367,9 +389,13 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     feedback_neg = mean_nf * std_nf;
 
     feedback_dir = -max(d_dir,0.0) * feedback_neg - min(d_dir,0.0) * feedback_pos; 
-    feedback_avg = -max(d_avg - 72.0, 0.0) * feedback_neg - min(d_avg - 68.0, 0.0) * feedback_pos; 
+    //feedback_avg = -max(d_avg - 68.0 + alpha, 0.0) * feedback_neg - min(d_avg - 72.0 - alpha, 0.0) * feedback_pos; 
+    feedback_avg = -max(d_avg - P_L1 + alpha, 0.0) * feedback_neg - min(d_avg - P_L2 - alpha, 0.0) * feedback_pos; 
 
-    w_target = max(w_old_avg + alpha * feedback_dir + beta * feedback_avg, 0.0);
+    //if(delay>80)
+    //  w_target = min(max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0), (double)window_size_float);
+    //else
+      w_target = max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0);
     //w_ins = max(w_target * (window + 1) - w_cur_avg * window, 0.0);
     w_ins = w_target;
   }
@@ -379,7 +405,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
-  printf("HST, %.2f, %lu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",window_size_float, timestamp_ack_received - send_timestamp_acked, w_old_avg, w_cur_avg, w_target, w_ins,d_dir, d_std, d_avg, feedback_dir, feedback_avg);
+  //printf("HST, %.2f, %lu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",window_size_float, timestamp_ack_received - send_timestamp_acked, w_old_avg, w_cur_avg, w_target, w_ins,d_dir, d_std, d_avg, feedback_dir, feedback_avg,alpha);
 
 
 
