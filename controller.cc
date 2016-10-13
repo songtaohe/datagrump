@@ -340,10 +340,10 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
   double alpha = 0.0;
-  double beta = 0.3;
+  double beta = 0.14;
 
-  if(delay > 100) alpha = 0.4;
-  else alpha = 0.0;
+  //if(delay > 100) alpha = 0.4;
+  //else alpha = 0.0;
 
 
   if(counter>window*2)
@@ -367,7 +367,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     feedback_neg = mean_nf * std_nf;
 
     feedback_dir = -max(d_dir,0.0) * feedback_neg - min(d_dir,0.0) * feedback_pos; 
-    feedback_avg = -max(d_avg - 73.0, 0.0) * feedback_neg - min(d_avg - 63.0, 0.0) * feedback_pos; 
+    feedback_avg = -max(d_avg - 72.0, 0.0) * feedback_neg - min(d_avg - 68.0, 0.0) * feedback_pos; 
 
     w_target = max(w_old_avg + alpha * feedback_dir + beta * feedback_avg, 0.0);
     //w_ins = max(w_target * (window + 1) - w_cur_avg * window, 0.0);
