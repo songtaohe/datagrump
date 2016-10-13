@@ -35,12 +35,13 @@ for TWB in range(3000,8000,500):
 		Popen("make > tmp",shell=True).wait()
 	
 		#print(filename)	
-		Popen("./run-contest-local test 2> %s" % filename, shell=True).wait()
+		Popen("./run-contest test 2> %s" % filename, shell=True).wait()
 		print(filename)
 		r = Score("%s" % filename)
 		print(r)
-		cmd = "echo 'Score " + str(r[2]) + "' >> " + filename;
-		Popen(cmd, shell=True).wait()
+		cmd = "echo ' result " + str(r[0]) + " " + str(r[1]) + " " + str(r[2]) + "' >> " + filename + "_Score";
+		print(cmd)
+		Popen("%s" % cmd, shell=True).wait()
 		ret.append(r)
-
+		exit()
 code.interact(local=locals())
