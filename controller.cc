@@ -4,7 +4,7 @@
 
 #include "controller.hh"
 #include "timestamp.hh"
-#include "parameter.h"
+#include "parameter.hh"
 
 using namespace std;
 
@@ -209,6 +209,8 @@ void Controller::ack_received_delay_threshold_varied_target( const uint64_t sequ
   window_list[counter] = window_size_float;  
   counter ++;
 
+  //if(counter < 5) 
+  //printf("L1 %.2f L2 %.2f BETA %.2f\n",P_L1, P_L2, P_BETA);
 
  
   if ( debug_ ) {
@@ -323,10 +325,11 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     window_list = (double*)malloc(sizeof(double)*65536*2);
   }
 
+  #include "parameter.hh"
   int window = P_WINDOW;
 
   double w_old_avg = 0;
-  double w_cur_avg = 0;
+  //double w_cur_avg = 0;
   double w_target = 0;
   double w_ins = 40;
   
@@ -348,13 +351,16 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   double feedback_avg = 0;
 
 
+  //#include "parameter.hh"
+
   static double alpha = 0.01;
-  static double beta = 0.14;
+  double beta;
   static double lambda = 1.005;
 
-
-  beta = P_BETA / 10.0;
   
+  beta = P_BETA / 100.0; 
+
+// printf("%.2f %.2f %.2f\n",beta, P_L1+1.0, P_L2+1.0);
   
 
 
@@ -371,7 +377,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   if(counter>window*2)
   {
     w_old_avg = Mean(window_list + counter - window*2, window);
-    w_cur_avg = Mean(window_list + counter - window, window);
+    //w_cur_avg = Mean(window_list + counter - window, window);
     
     d_dir = dir(delay_list + counter - window, window);
     d_std = Std(delay_list + counter - window, window);
@@ -391,6 +397,8 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     feedback_dir = -max(d_dir,0.0) * feedback_neg - min(d_dir,0.0) * feedback_pos; 
     //feedback_avg = -max(d_avg - 68.0 + alpha, 0.0) * feedback_neg - min(d_avg - 72.0 - alpha, 0.0) * feedback_pos; 
     feedback_avg = -max(d_avg - P_L1 + alpha, 0.0) * feedback_neg - min(d_avg - P_L2 - alpha, 0.0) * feedback_pos; 
+
+
 
     //if(delay>80)
     //  w_target = min(max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0), (double)window_size_float);
@@ -414,6 +422,8 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   counter ++;
 
 
+  if(counter < 5) 
+      printf("L1 %.2f L2 %.2f BETA %.2f\n",P_L1, P_L2, beta);
   //if(delay > 180) w_ins = 0;
   //if(d_dir > 3) w_ins = 0;
 
