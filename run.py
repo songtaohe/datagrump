@@ -12,31 +12,34 @@ def Score(filename):
 
 Window = 32
 
-L0 = 70
+L0 = 68
 L1 = 60
 L2 = 80
-
+TWB = 5000
 Beta = 11
 
 
 ret = []
 
-for L0 in range(60,80,2):
-	Popen("echo 'int P_WINDOW=%d;' > parameter.hh" % Window, shell=True).wait()
-	Popen("echo 'double P_L0=%d;' >> parameter.hh" % L0, shell=True).wait()
-	Popen("echo 'double P_L1=%d;' >> parameter.hh" % L1, shell=True).wait()
-	Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
-	Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
+for TWB in range(3000,8000,500):
+	for Beta in range(2,30,4):
+		filename = "log_TWB_B_"+str(TWB)+"_"+str(Beta)
+		Popen("echo 'int P_WINDOW=%d;' > parameter.hh" % Window, shell=True).wait()
+		Popen("echo 'double P_L0=%d;' >> parameter.hh" % L0, shell=True).wait()
+		Popen("echo 'double P_L1=%d;' >> parameter.hh" % L1, shell=True).wait()
+		Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
+		Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
+		Popen("echo 'TimeWarpBase=%d;' >> parameter.hh" % TWB, shell=True).wait()
 	
-	Popen("make clean > tmp",shell=True).wait()
-	Popen("make > tmp",shell=True).wait()
+		Popen("make clean > tmp",shell=True).wait()
+		Popen("make > tmp",shell=True).wait()
 	
-	print("L0 " + str(L0))	
-	Popen("./run-contest-local test 2> log_L0_%d" % L0, shell=True).wait()
-	
-	r = Score("log_L0_%d" % L0)
-	print(r)
+		#print(filename)	
+		Popen("./run-contest-local test 2> %s" % filename, shell=True).wait()
+		print(filename)
+		r = Score("%s" % filename)
+		print(r)
  
-	ret.append(r)
+		ret.append(r)
 
 code.interact(local=locals())

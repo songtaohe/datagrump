@@ -292,6 +292,13 @@ double dir_power(double* ptr, int n)
 }
 
 
+double throughput_est(uint64_t* t, int n)
+{
+  uint64_t delta = t[n-1] - t[0];
+  //TODO prediction
+  return ((double)delta)/n * 1000;
+}
+
 
 
 void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
@@ -308,6 +315,10 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
   static double* delay_list = NULL;
   static double* window_list = NULL;
+  static uint64_t * ack_time_stamps = NULL;
+
+  
+
 
   static int counter = 0;
 
@@ -325,8 +336,19 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     window_list = (double*)malloc(sizeof(double)*65536*2);
   }
 
+  if(ack_time_stamps == NULL)
+  {
+    ack_time_stamps = (uint64_t*)malloc(sizeof(uint64_t)*65536*2);
+  }
+
+
+  double TimeWarpBase = 5000;
+
+
   #include "parameter.hh"
   int window = P_WINDOW;
+
+  double throughput = 0;
 
   double w_old_avg = 0;
   //double w_cur_avg = 0;
@@ -376,6 +398,8 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
   if(counter>window*2)
   {
+    throughput = throughput_est(ack_time_stamps + counter -window, window);
+
     w_old_avg = Mean(window_list + counter - window*2, window);
     //w_cur_avg = Mean(window_list + counter - window, window);
     
@@ -403,7 +427,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     //if(delay>80)
     //  w_target = min(max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0), (double)window_size_float);
     //else
-      w_target = max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0);
+      w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg) * TimeWarpBase/throughput, 0.0);
     //w_ins = max(w_target * (window + 1) - w_cur_avg * window, 0.0);
     w_ins = w_target;
   }
@@ -411,7 +435,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
-
+  //printf("T %.2f\n",throughput);
 
   //printf("HST, %.2f, %lu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",window_size_float, timestamp_ack_received - send_timestamp_acked, w_old_avg, w_cur_avg, w_target, w_ins,d_dir, d_std, d_avg, feedback_dir, feedback_avg,alpha);
 
@@ -419,6 +443,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
   delay_list[counter] = delay;
   window_list[counter] = w_ins;
+  ack_time_stamps[counter] = timestamp_ack_received;
   counter ++;
 
 
