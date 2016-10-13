@@ -39,7 +39,8 @@ for TWB in range(3000,8000,500):
 		print(filename)
 		r = Score("%s" % filename)
 		print(r)
- 
+		cmd = "echo 'Score " + str(r[2]) + "' >> " + filename;
+		Popen(cmd, shell=True).wait()
 		ret.append(r)
 
 code.interact(local=locals())
