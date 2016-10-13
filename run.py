@@ -28,11 +28,11 @@ for L0 in range(60,80,2):
 	Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
 	Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
 	
-	Popen("make clean",shell=True).wait()
-	Popen("make",shell=True).wait()
+	Popen("make clean > tmp",shell=True).wait()
+	Popen("make > tmp",shell=True).wait()
 	
 	print("L0 " + str(L0))	
-	Popen("./run-contest-local test > log_L0_%d" % L0, shell=True).wait()
+	Popen("./run-contest-local test 2> log_L0_%d" % L0, shell=True).wait()
 	
 	r = Score("log_L0_%d" % L0)
 	print(r)
