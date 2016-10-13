@@ -29,7 +29,7 @@ for TWB in range(3000,8000,500):
 		Popen("echo 'double P_L1=%d;' >> parameter.hh" % L1, shell=True).wait()
 		Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
 		Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
-		Popen("echo 'TimeWarpBase=%d;' >> parameter.hh" % TWB, shell=True).wait()
+		Popen("echo 'double TimeWarpBase=%d;' >> parameter.hh" % TWB, shell=True).wait()
 	
 		Popen("make clean > tmp",shell=True).wait()
 		Popen("make > tmp",shell=True).wait()
