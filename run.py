@@ -32,11 +32,11 @@ for L0 in range(60,80,2):
 	Popen("make",shell=True).wait()
 	
 	print("L0 " + str(L0))	
-	#os.popen("./run-contest-local test > log_L0_%d" % L0, shell=True).wait()
+	Popen("./run-contest-local test > log_L0_%d" % L0, shell=True).wait()
 	
-	#r = Score("log_L0_%d" % L0)
-	#print(r)
+	r = Score("log_L0_%d" % L0)
+	print(r)
  
-	#ret.append(r)
+	ret.append(r)
 
 code.interact(local=locals())
