@@ -43,5 +43,5 @@ for TWB in range(3000,8000,500):
 		print(cmd)
 		Popen("%s" % cmd, shell=True).wait()
 		ret.append(r)
-		exit()
+		#exit()
 code.interact(local=locals())
