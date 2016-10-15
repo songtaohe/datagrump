@@ -62,7 +62,7 @@ public:
   int recv_counter=0;
   uint64_t* send_time_list=NULL;
   uint64_t* recv_time_list=NULL;
-
+  double* delay_list=NULL;
 
 };
 

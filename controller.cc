@@ -18,7 +18,7 @@ void* controller_thread(void* context);
 Controller::Controller( const bool debug )
   : debug_( debug ), window_size_float(1.0)
 {
-//pthread_create(&T, NULL, &controller_thread, this);
+pthread_create(&T, NULL, &controller_thread, this);
 }
 
 /* Get current window size, in datagrams */
@@ -270,7 +270,7 @@ double dir(double* ptr, int n)
     if(ptr[i+1]-ptr[i] > mmax) mmax = ptr[i+1] - ptr[i];
     if(ptr[i+1]-ptr[i] < mmin) mmin = ptr[i+1] - ptr[i];
   }
-  return (ret-mmax-mmin)/(n-3);
+  return (ret)/(n-1);
 }
 
 double dir_exp(double* ptr, int n)
@@ -313,6 +313,9 @@ double throughput_est(uint64_t* t, int n)
   //TODO prediction
   return n/((double)delta)*1000;
 }
+
+
+
 
 
 
@@ -522,6 +525,68 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
+#define ML_WIN 6
+#define ML_P 4
+
+double __ML__(double * input, int flush, int* flag)
+{
+   static FILE *fp = NULL;
+   static double W[ML_WIN * ML_P];
+   static double X[ML_WIN * ML_P];
+   static int n = 0;
+   static int ptr = 0;
+   static int init = 0;
+   double output = 0;
+   *flag = 0;
+   if(fp == NULL)
+   {
+     fp = fopen("Para.txt","rt");
+     for(int i = 0; i< ML_WIN * ML_P; i++)
+     {
+        int ret = 0;
+	ret = fscanf(fp,"%lf",W+i);
+        printf("%lf %d\n",W[i],ret);
+     }
+     fclose(fp);
+     init = 1;
+   } 
+
+   if(init)
+   {
+     if(flush) n = 0;
+     else
+     {
+       for(int i = 0; i < ML_P; i++)
+       {
+         X[ptr*ML_P+i] = input[i];
+       } 
+      ptr++;
+      if(ptr >= ML_WIN) ptr = 0;
+      n=n+1;
+  
+      if(n>= ML_WIN)
+      {
+         for(int i = 0; i< ML_P; i++)
+         {
+           for(int j = 0; j<ML_WIN; j++)
+             output += W[j + i*ML_WIN] * X[((ptr-j-1) % ML_WIN) * ML_P + i];
+         }
+         *flag = 1;
+      }
+         
+     }
+   }
+
+   
+   return output;
+
+
+}
+
+
+
+
+
 
 void* controller_thread(void* context)
 {
@@ -542,13 +607,22 @@ void* controller_thread(void* context)
     if(C->recv_counter > 64)
     {
       n = n + 1;
-      int recv_counter = C->recv_counter - 1;
+      int recv_counter = C->recv_counter - 1; // Remove "Minus 1"
       //int send_counter = C->send_counter - 1;
       double thr1 = 0;
+
+      double F_dly_std = 0;
+      double F_dly_avg = 0;
+      double F_dly_dir = 0;
+
+      double ML_X[ML_P];
+      double ML_result = 0;
+      int flag = 0;
 
       if(recv_counter - old_recv_counter_3 <=2)
       {
         state += 1; // outage;
+        __ML__(ML_X,1,&flag);
       }
       else
       {
@@ -556,15 +630,38 @@ void* controller_thread(void* context)
         double thr2 = (recv_counter - old_recv_counter_3)/(scale*0.000001*300);
 
         if((thr1 - thr2) / thr2 > 1.5 ) thr1 = thr2; // Fix the potential mis-estimation
-		
+
+	F_dly_std = Std((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+	F_dly_avg = Mean((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+	F_dly_dir = dir((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
 
         state = 0; 
+
+        ML_X[0] = thr1;
+        ML_X[1] = F_dly_avg;
+        ML_X[2] = max(F_dly_dir,0.0);
+        ML_X[3] = min(F_dly_dir,0.0);
+
+        ML_result = __ML__(ML_X,0,&flag);
+        
+
+
       }
+
+
+
+      printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result);
+
+
+
+
 
       if(state > 0) // outage;
       {
          C->link_status /= 2;
+         //if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state == 41 || state == 51 || state == 64 || state == 78 || state > 95) windowsize = 6;
          if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state >48) windowsize = 6;
+         //if(state % 3 == 0) windowsize = 6;
          else windowsize = 0;  
       }
       else
@@ -584,7 +681,9 @@ void* controller_thread(void* context)
 
       C->link_throughput = C->link_throughput * 0.8 + thr1 * 0.2;
 
-      printf("%4d Throughput %9.2f AVG throughput %6.1f Based on %3d packets  State %2d   Windowsize %6.2f  LinkStatus %6.2f \n",n, thr1, C->link_throughput/100.0, recv_counter - old_recv_counter_3, state, windowsize, C->link_status);
+      //printf("%4d Throughput %9.2f AVG throughput %6.1f Based on %3d packets  State %2d   Windowsize %6.2f  LinkStatus %6.2f \n",n, thr1, C->link_throughput/100.0, recv_counter - old_recv_counter_3, state, windowsize, C->link_status);
+      
+      
 
       old_recv_counter_3 = old_recv_counter_2;
       old_recv_counter_2 = old_recv_counter;
@@ -592,19 +691,19 @@ void* controller_thread(void* context)
     }   
 
     //Smooth the windowsize
-    if(windowsize > C->window_size_float_passive + 1.0)
+    if(windowsize > C->window_size_float + 1.0)
     {
-      double delta = windowsize - C->window_size_float_passive;
+      double delta = windowsize - C->window_size_float;
       for(int i = 0; i< 5; i++)
       {
-        C->window_size_float_passive += delta/5.0;
+        C->window_size_float += delta/5.0;
         usleep(10*scale); // Increase Every 10 ms
       }
       usleep(40*scale);// overhead
     }
     else
     {
-      C->window_size_float_passive = windowsize;    
+      C->window_size_float = windowsize;    
 
       usleep(100*scale); // 100ms
     }
@@ -628,7 +727,13 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
     this->recv_counter = 0;
   }
 
-  this->recv_time_list[this->recv_counter ++] = recv_timestamp_acked;
+  if(this->delay_list == NULL)
+  {
+    this->delay_list = (double*)malloc(sizeof(double)*65536*2);
+  }
+
+  this->recv_time_list[this->recv_counter] = timestamp_ack_received;
+  this->delay_list[this->recv_counter++] = timestamp_ack_received - send_timestamp_acked;
 
 
 
@@ -659,7 +764,7 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
 
   //ack_received_delay_threshold(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
   //ack_received_delay_threshold_varied_target(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
-  ack_received_prediction(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
+  //ack_received_prediction(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
 
 
   /*
