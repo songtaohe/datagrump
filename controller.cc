@@ -525,7 +525,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
-#define ML_WIN 6
+#define ML_WIN 4
 #define ML_P 4
 
 double __ML__(double * input, int flush, int* flag)
@@ -569,7 +569,8 @@ double __ML__(double * input, int flush, int* flag)
          for(int i = 0; i< ML_P; i++)
          {
            for(int j = 0; j<ML_WIN; j++)
-             output += W[j + i*ML_WIN] * X[((ptr-j-1) % ML_WIN) * ML_P + i];
+             output += W[j + i*ML_WIN] * X[((ptr+ML_WIN-j-1) % ML_WIN) * ML_P + i];
+             //output += W[j + i*ML_WIN] * X[((ptr-j-1) % ML_WIN) * ML_P + i];
          }
          *flag = 1;
       }
@@ -598,6 +599,7 @@ void* controller_thread(void* context)
   static int n = 0;
   double windowsize = 40;
   double old_thr = 0;
+  static double old_dly = 0;
   //static int old_send_counter = 0;
   int scale = 200;
   while(1)
@@ -618,6 +620,8 @@ void* controller_thread(void* context)
       double ML_X[ML_P];
       double ML_result = 0;
       int flag = 0;
+
+      double ML_error = 1.0;
 
       if(recv_counter - old_recv_counter_3 <=2)
       {
@@ -650,8 +654,10 @@ void* controller_thread(void* context)
 
 
 
-      printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result);
-
+      ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5;
+      printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result, fabs(F_dly_avg - old_dly), ML_error);
+      //ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5
+      old_dly = ML_result;
 
 
 
@@ -675,6 +681,19 @@ void* controller_thread(void* context)
         else
           windowsize = 0.08 * thr1;
       }
+
+      // ML   avoid high latency
+      if(ML_error < 10)
+      {
+        if(ML_result > 140 - 10) windowsize /= 1.3;
+        if(ML_result > 155 - 10) windowsize /= 1.5;
+        if(ML_result > 170 - 10) windowsize /= 1.7;
+      }
+      /*
+      if(F_dly_avg > 130) windowsize /= 1.5;
+      if(F_dly_avg > 140) windowsize /= 1.5;
+      if(F_dly_avg > 160) windowsize /= 1.5;
+      */
 
 
       old_thr = thr1;
