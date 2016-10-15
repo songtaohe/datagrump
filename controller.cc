@@ -1,18 +1,24 @@
 #include <iostream>
+#include <unistd.h>
 #include <math.h>
 #include <malloc.h>
-
+#include <time.h>
 #include "controller.hh"
 #include "timestamp.hh"
 #include "parameter.hh"
 
 using namespace std;
 
+
+
+pthread_t T;
+void* controller_thread(void* context);
+
 /* Default constructor */
 Controller::Controller( const bool debug )
   : debug_( debug ), window_size_float(1.0)
-
 {
+//pthread_create(&T, NULL, &controller_thread, this);
 }
 
 /* Get current window size, in datagrams */
@@ -37,6 +43,15 @@ void Controller::datagram_was_sent( const uint64_t sequence_number,
                                     /* in milliseconds */
 {
   /* Default: take no action */
+  if(this->send_time_list == NULL) 
+  {
+    this->send_time_list = (uint64_t*)malloc(sizeof(uint64_t)*65536*2);
+    this->send_counter = 0;
+  }
+
+  this->send_time_list[this->send_counter ++] = send_timestamp;
+
+
 
   if ( debug_ ) {
     cerr << "At time " << send_timestamp
@@ -296,7 +311,7 @@ double throughput_est(uint64_t* t, int n)
 {
   uint64_t delta = t[n-1] - t[0];
   //TODO prediction
-  return ((double)delta)/n * 1000;
+  return n/((double)delta)*1000;
 }
 
 
@@ -423,13 +438,20 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     feedback_avg = -max(d_avg - P_L1 + alpha, 0.0) * feedback_neg - min(d_avg - P_L2 - alpha, 0.0) * feedback_pos; 
 
 
-
+    
     //if(delay>80)
     //  w_target = min(max(w_old_avg + 0.0 * feedback_dir + beta * feedback_avg, 0.0), (double)window_size_float);
     //else
-      w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg) * TimeWarpBase/throughput, 0.0);
+	double k = TimeWarpBase/throughput;
+        k = min(max(k,0.9999),1.0001);
+        //if(delay > 100) k *= 10;
+      //w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg) * TimeWarpBase/throughput, 0.0);
+      w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg)*k , 0.0);
+      //if(delay < 70 && throughput > 100) w_target = 0.08 * throughput;
     //w_ins = max(w_target * (window + 1) - w_cur_avg * window, 0.0);
-    w_ins = w_target;
+    
+
+   w_ins = w_target;
   }
 
 
@@ -452,8 +474,38 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   //if(delay > 180) w_ins = 0;
   //if(d_dir > 3) w_ins = 0;
 
+  //window_size_float_active = w_ins;
   window_size_float = w_ins;
 
+
+  /*
+  double merger_factor = 0.0;
+  double min_w = min(w_ins, (double)window_size_float_passive);
+  double max_w = max(w_ins, (double)window_size_float_passive);
+
+
+
+  if( link_status < 50) merger_factor = link_status / 50.0;
+  merger_factor = 0.0;
+  if( link_status > 2500) merger_factor = min((link_status - 2500)/1000.0, 1.0); 
+
+  if(est_time < 10) merger_factor = 1.0;
+  if(est_time <95 && est_time >85) merger_factor = max(0.5,merger_factor);
+
+
+
+  window_size_float = min_w * merger_factor + max_w * (1.0 - merger_factor);
+*/
+
+/*
+  if(link_throughput < 200.0) window_size_float *= 0.95;
+  if(link_throughput < 100.0) window_size_float *= 0.9;
+  if(link_throughput < 50.0) window_size_float *= 0.8;
+*/
+  //if(link_status > 3000) window_size_float = min(w_ins, (double)window_size_float_passive);
+  //else if(link_status < 50) window_size_float = min(w_ins, (double)window_size_float_passive);
+  //else window_size_float = max(w_ins, (double)window_size_float_passive);
+  
 
 
   if ( debug_ ) {
@@ -471,6 +523,93 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
+void* controller_thread(void* context)
+{
+  Controller* C = (Controller*)context;
+  static int old_recv_counter = 0;
+  static int old_recv_counter_2 = 0;
+  static int old_recv_counter_3 = 0;
+  static int state = 0;
+  static int n = 0;
+  double windowsize = 40;
+  double old_thr = 0;
+  //static int old_send_counter = 0;
+  int scale = 200;
+  while(1)
+  {
+    //TODO
+    C->est_time += 200*100/1000000.00;
+    if(C->recv_counter > 64)
+    {
+      n = n + 1;
+      int recv_counter = C->recv_counter - 1;
+      //int send_counter = C->send_counter - 1;
+      double thr1 = 0;
+
+      if(recv_counter - old_recv_counter_3 <=2)
+      {
+        state += 1; // outage;
+      }
+      else
+      {
+        thr1 = throughput_est((C->recv_time_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+        double thr2 = (recv_counter - old_recv_counter_3)/(scale*0.000001*300);
+
+        if((thr1 - thr2) / thr2 > 1.5 ) thr1 = thr2; // Fix the potential mis-estimation
+		
+
+        state = 0; 
+      }
+
+      if(state > 0) // outage;
+      {
+         C->link_status /= 2;
+         if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state >48) windowsize = 6;
+         else windowsize = 0;  
+      }
+      else
+      {
+        C->link_status += scale/10.0;
+        if(old_thr >= 1.0)
+        {
+          if(old_thr > thr1) windowsize = 0.08 * max(thr1*1.618 - old_thr*0.618, 0.0); // prediction
+          else windowsize = 0.08 * max(thr1*1.382 - old_thr*0.382, 0.0); // prediction
+        }
+        else
+          windowsize = 0.08 * thr1;
+      }
+
+
+      old_thr = thr1;
+
+      C->link_throughput = C->link_throughput * 0.8 + thr1 * 0.2;
+
+      printf("%4d Throughput %9.2f AVG throughput %6.1f Based on %3d packets  State %2d   Windowsize %6.2f  LinkStatus %6.2f \n",n, thr1, C->link_throughput/100.0, recv_counter - old_recv_counter_3, state, windowsize, C->link_status);
+
+      old_recv_counter_3 = old_recv_counter_2;
+      old_recv_counter_2 = old_recv_counter;
+      old_recv_counter = recv_counter;
+    }   
+
+    //Smooth the windowsize
+    if(windowsize > C->window_size_float_passive + 1.0)
+    {
+      double delta = windowsize - C->window_size_float_passive;
+      for(int i = 0; i< 5; i++)
+      {
+        C->window_size_float_passive += delta/5.0;
+        usleep(10*scale); // Increase Every 10 ms
+      }
+      usleep(40*scale);// overhead
+    }
+    else
+    {
+      C->window_size_float_passive = windowsize;    
+
+      usleep(100*scale); // 100ms
+    }
+  }
+}
 
 /* An ack was received */
 void Controller::ack_received( const uint64_t sequence_number_acked,
@@ -483,6 +622,18 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
                                /* when the ack was received (by sender) */
 {
   /* Default: take no action */
+  if(this->recv_time_list == NULL)
+  {
+    this->recv_time_list = (uint64_t*)malloc(sizeof(uint64_t)*65536*2);
+    this->recv_counter = 0;
+  }
+
+  this->recv_time_list[this->recv_counter ++] = recv_timestamp_acked;
+
+
+
+
+
 
   /* Simple AIMD */
   /*
@@ -511,7 +662,16 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
   ack_received_prediction(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
 
 
-
+  /*
+  if(recv_timestamp_acked - send_timestamp_acked > 100)
+  window_size_float /= 1.3;
+  else if(timestamp_ack_received - send_timestamp_acked > 100)
+  {
+  window_size_float /= 1.1;
+  }
+  else
+  window_size_float +=max(3.0/window_size_float,1.0);
+*/
  
 
 
