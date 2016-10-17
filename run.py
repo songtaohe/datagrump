@@ -10,38 +10,40 @@ def Score(filename):
 	return  throughput, delay, throughput/delay*1000.0
 
 
-Window = 32
+Window = 128
 
 L0 = 68
 L1 = 60
 L2 = 80
 TWB = 5000
-Beta = 11
+Beta = 3
 
 
 ret = []
 
-for TWB in range(3000,8000,500):
-	for Beta in range(2,30,4):
-		filename = "log_TWB_B_"+str(TWB)+"_"+str(Beta)
-		Popen("echo 'int P_WINDOW=%d;' > parameter.hh" % Window, shell=True).wait()
-		Popen("echo 'double P_L0=%d;' >> parameter.hh" % L0, shell=True).wait()
-		Popen("echo 'double P_L1=%d;' >> parameter.hh" % L1, shell=True).wait()
-		Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
-		Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
-		Popen("echo 'double TimeWarpBase=%d;' >> parameter.hh" % TWB, shell=True).wait()
+for L0 in range(66,2,72):
+	for Beta in range(1,5):
+		for L1 in range(58,2,64):
+			for L2 in range(76,2,84):
+				filename = "log_L0_L1_L2_B"+str(L0)+"_"+str(L1) + "_" + str(L2) + "_"+ str(Beta)
+				Popen("echo 'int P_WINDOW=%d;' > parameter.hh" % Window, shell=True).wait()
+				Popen("echo 'double P_L0=%d;' >> parameter.hh" % L0, shell=True).wait()
+				Popen("echo 'double P_L1=%d;' >> parameter.hh" % L1, shell=True).wait()
+				Popen("echo 'double P_L2=%d;' >> parameter.hh" % L2, shell=True).wait()
+				Popen("echo 'double P_BETA=%d;' >> parameter.hh" % Beta, shell=True).wait()
+				Popen("echo 'double TimeWarpBase=%d;' >> parameter.hh" % TWB, shell=True).wait()
 	
-		Popen("make clean > tmp",shell=True).wait()
-		Popen("make > tmp",shell=True).wait()
+				Popen("make clean > tmp",shell=True).wait()
+				Popen("make > tmp",shell=True).wait()
 	
 		#print(filename)	
-		Popen("./run-contest test 2> %s" % filename, shell=True).wait()
-		print(filename)
-		r = Score("%s" % filename)
-		print(r)
-		cmd = "echo ' result " + str(r[0]) + " " + str(r[1]) + " " + str(r[2]) + "' >> " + filename + "_Score";
-		print(cmd)
-		Popen("%s" % cmd, shell=True).wait()
-		ret.append(r)
+				Popen("./run-contest Songtao 2> %s" % filename, shell=True).wait()
+				print(filename)
+				r = Score("%s" % filename)
+				print(r)
+				cmd = "echo ' result " + str(r[0]) + " " + str(r[1]) + " " + str(r[2]) + "' >> " + filename + "_Score";
+				print(cmd)
+				Popen("%s" % cmd, shell=True).wait()
+				ret.append(r)
 		#exit()
 code.interact(local=locals())
