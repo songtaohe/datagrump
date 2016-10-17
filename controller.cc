@@ -16,7 +16,7 @@ void* controller_thread(void* context);
 
 /* Default constructor */
 Controller::Controller( const bool debug )
-  : debug_( debug ), window_size_float(1.0)
+  : debug_( debug ), window_size_float(100.0)
 {
 //pthread_create(&T, NULL, &controller_thread, this);
 }
@@ -53,7 +53,7 @@ void Controller::datagram_was_sent( const uint64_t sequence_number,
   this->send_time_list[this->send_counter ++] = timestamp_ms();
   //printf("%lu %lud\n",sequence_number, send_timestamp);
 
-  usleep(500); // sleep 500 microsecond
+  usleep(senddelay); // sleep 500 microsecond
 
 
   if ( debug_ ) {
@@ -250,8 +250,15 @@ void Controller::ack_received_delay_threshold_varied_target( const uint64_t sequ
 template<typename type> double Mean(type * ptr, int n)
 {
   double ret = 0;
-  for(int i = 0; i< n; i++) ret = ret + ptr[i];
-  return ret/n;
+  double decay = 1.0;
+  double decay_sum = 0;
+  for(int i = n-1; i>=0; i--)
+  {
+    ret = ret + ptr[i] * decay;
+    decay_sum+=decay;
+    decay *= 0.97;
+  }
+  return ret/(decay_sum);
 }
 
 double Std(double* ptr, int n)
@@ -430,7 +437,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     int cur_win = window;
     int cur_win_old = 0;
 
-  if(counter>window*2)
+  if(counter>window*3)
   {
     //int cur_win = window;
     //int cur_win_old = 0;
@@ -607,6 +614,30 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   //printf("Delay %15lu Delta %15.6lf Delta %15.6lf  Feedback AVG %15.6lf\n", delay, w_ins - window_size_float, w_ins, feedback_avg);
 
   window_size_float += min(w_ins - window_size_float,1.0);
+
+
+  // Dirty Code
+  //uint64_t cur_time = ack_time_stamps[counter-1] - ack_time_stamps[0];
+  //static int idle_state = 0;
+
+/*
+  if(cur_time > 60000 && cur_time < 70000)
+  {
+    idle_state = 1;
+     window_size_float = 10000; // a lot but with delay
+     senddelay = 40* 1000;// 40ms 
+  }
+  else
+  {
+     if(idle_state == 1) window_size_float = 40;
+     idle_state = 0;
+     senddelay = 500;
+  }
+*/
+
+
+  //printf("%lu\n",cur_time);
+
  
   //printf("%lf\n",throughput);
 
@@ -958,5 +989,5 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
    before sending one more datagram */
 unsigned int Controller::timeout_ms( void )
 {
-  return 1000; /* timeout of one second */
+  return 50; /* timeout of one second */
 }

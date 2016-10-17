@@ -14,6 +14,7 @@ public:
   float window_size_float;
   float window_size_float_active = 0;
   float window_size_float_passive = 0;
+  int senddelay = 500;
 
   double est_time = 0;
   double link_status = 0;
