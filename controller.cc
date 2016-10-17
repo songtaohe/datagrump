@@ -534,7 +534,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
          
 
    w_ins = w_target;
-   if(delay > 80) w_ins /=1.02;
+   //if(delay > 80) w_ins /=1.02;
 
 
 
