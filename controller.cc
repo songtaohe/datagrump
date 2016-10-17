@@ -18,7 +18,7 @@ void* controller_thread(void* context);
 Controller::Controller( const bool debug )
   : debug_( debug ), window_size_float(1.0)
 {
-pthread_create(&T, NULL, &controller_thread, this);
+//pthread_create(&T, NULL, &controller_thread, this);
 }
 
 /* Get current window size, in datagrams */
@@ -335,7 +335,6 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   static double* window_list = NULL;
   static uint64_t * ack_time_stamps = NULL;
 
-  
 
 
   static int counter = 0;
@@ -397,6 +396,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   double beta;
   static double lambda = 1.005;
 
+  static uint64_t TimeWindow = 1; // ms
   
   beta = P_BETA / 100.0; 
 
@@ -413,17 +413,40 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   //if(delay > 100) alpha = 0.4;
   //else alpha = 0.0;
 
+  
+  delay_list[counter] = delay;
+  window_list[counter] = w_ins;
+  ack_time_stamps[counter] = timestamp_ack_received;
+
+
 
   if(counter>window*2)
   {
-    throughput = throughput_est(ack_time_stamps + counter -window, window);
+    int cur_win = window;
+  
+    cur_win = 0;
+      
+    while(cur_win < window - 1)
+    {
+      if(timestamp_ack_received - ack_time_stamps[counter - cur_win-1] < TimeWindow)
+        cur_win ++;
+      else break;
+    }
 
-    w_old_avg = Mean(window_list + counter - window*2, window);
+    printf("Time Window %d\n",cur_win);
+    cur_win = 0;
+    //cur_win = window;
+
+
+
+    throughput = throughput_est(ack_time_stamps + counter -cur_win, cur_win);
+
+    w_old_avg = Mean(window_list + counter - (cur_win+1)*2+1, cur_win+1); // FIXME
     //w_cur_avg = Mean(window_list + counter - window, window);
     
-    d_dir = dir(delay_list + counter - window, window);
-    d_std = Std(delay_list + counter - window, window);
-    d_avg = Mean(delay_list + counter - window, window);
+    //d_dir = dir(delay_list + counter - cur_win, cur_win+1);
+    d_std = Std(delay_list + counter - cur_win, cur_win+1);
+    d_avg = Mean(delay_list + counter - cur_win, cur_win+1);
 
     double mean_tp = P_L0 - alpha;
 
@@ -449,13 +472,33 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
         k = min(max(k,0.9999),1.0001);
         //if(delay > 100) k *= 10;
       //w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg) * TimeWarpBase/throughput, 0.0);
+
       w_target = max(w_old_avg + (0.0 * feedback_dir + beta * feedback_avg)*k , 0.0);
+     if(debug_) printf("%lf\n",w_target);
       //if(delay < 70 && throughput > 100) w_target = 0.08 * throughput;
     //w_ins = max(w_target * (window + 1) - w_cur_avg * window, 0.0);
-    
 
-   w_ins = w_target;
+     if(d_avg>80) w_ins = window_size_float / 1.02;
+     else w_ins = window_size_float + min(2.0/window_size_float, 1.0);
+
+ 
+     //if(feedback_avg < 0) w_ins = window_size_float / (1.0 - 0.001 * feedback_avg);
+     //else w_ins = window_size_float + min((0.02*feedback_avg)/window_size_float, 1.0);
+
+ 
+
+         
+
+   //w_ins = w_target;
   }
+
+
+
+
+  //printf("T %.2f\n",throughput);
+
+  //printf("HST, %.2f, %lu, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f\n",window_size_float, timestamp_ack_received - send_timestamp_acked, w_old_avg, w_cur_avg, w_target, w_ins,d_dir, d_std, d_avg, feedback_dir, feedback_avg,alpha);
+
 
 
 
@@ -478,6 +521,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   //if(d_dir > 3) w_ins = 0;
 
   //window_size_float_active = w_ins;
+  printf("Delay %15lu Delta %15.6lf Delta %15.6lf  Feedback AVG %15.6lf\n", delay, w_ins - window_size_float, w_ins, feedback_avg);
   window_size_float = w_ins;
 
 
@@ -525,14 +569,14 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
 
 
 
-#define ML_WIN 4
+#define ML_WIN 8
 #define ML_P 4
 
 double __ML__(double * input, int flush, int* flag)
 {
    static FILE *fp = NULL;
-   static double W[ML_WIN * ML_P];
-   static double X[ML_WIN * ML_P];
+   static double W[ML_WIN * ML_P + 1];
+   static double X[ML_WIN * ML_P + 1];
    static int n = 0;
    static int ptr = 0;
    static int init = 0;
@@ -541,7 +585,7 @@ double __ML__(double * input, int flush, int* flag)
    if(fp == NULL)
    {
      fp = fopen("Para.txt","rt");
-     for(int i = 0; i< ML_WIN * ML_P; i++)
+     for(int i = 0; i< ML_WIN * ML_P + 1; i++)
      {
         int ret = 0;
 	ret = fscanf(fp,"%lf",W+i);
@@ -566,6 +610,7 @@ double __ML__(double * input, int flush, int* flag)
   
       if(n>= ML_WIN)
       {
+         output = W[ML_WIN * ML_P];
          for(int i = 0; i< ML_P; i++)
          {
            for(int j = 0; j<ML_WIN; j++)
@@ -613,7 +658,7 @@ void* controller_thread(void* context)
       //int send_counter = C->send_counter - 1;
       double thr1 = 0;
 
-      double F_dly_std = 0;
+      //double F_dly_std = 0;
       double F_dly_avg = 0;
       double F_dly_dir = 0;
 
@@ -635,7 +680,7 @@ void* controller_thread(void* context)
 
         if((thr1 - thr2) / thr2 > 1.5 ) thr1 = thr2; // Fix the potential mis-estimation
 
-	F_dly_std = Std((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+	//F_dly_std = Std((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
 	F_dly_avg = Mean((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
 	F_dly_dir = dir((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
 
@@ -655,7 +700,7 @@ void* controller_thread(void* context)
 
 
       ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5;
-      printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result, fabs(F_dly_avg - old_dly), ML_error);
+      //printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result, fabs(F_dly_avg - old_dly), ML_error);
       //ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5
       old_dly = ML_result;
 
@@ -683,12 +728,12 @@ void* controller_thread(void* context)
       }
 
       // ML   avoid high latency
-      if(ML_error < 10)
-      {
-        if(ML_result > 140 - 10) windowsize /= 1.3;
-        if(ML_result > 155 - 10) windowsize /= 1.5;
-        if(ML_result > 170 - 10) windowsize /= 1.7;
-      }
+      //if(ML_error < 10)
+      //{
+      //  if(ML_result > 90) windowsize /= 1.3;
+      //  if(ML_result > 100) windowsize /= 1.5;
+      //  if(ML_result > 120) windowsize /= 1.7;
+      //}
       /*
       if(F_dly_avg > 130) windowsize /= 1.5;
       if(F_dly_avg > 140) windowsize /= 1.5;
@@ -709,20 +754,21 @@ void* controller_thread(void* context)
       old_recv_counter = recv_counter;
     }   
 
+    int mask = 0;
     //Smooth the windowsize
     if(windowsize > C->window_size_float + 1.0)
     {
       double delta = windowsize - C->window_size_float;
       for(int i = 0; i< 5; i++)
       {
-        C->window_size_float += delta/5.0;
+        if(mask) C->window_size_float += delta/5.0;
         usleep(10*scale); // Increase Every 10 ms
       }
       usleep(40*scale);// overhead
     }
     else
     {
-      C->window_size_float = windowsize;    
+      if(mask) C->window_size_float = windowsize;    
 
       usleep(100*scale); // 100ms
     }
@@ -783,7 +829,7 @@ void Controller::ack_received( const uint64_t sequence_number_acked,
 
   //ack_received_delay_threshold(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
   //ack_received_delay_threshold_varied_target(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
-  //ack_received_prediction(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
+  ack_received_prediction(sequence_number_acked, send_timestamp_acked, recv_timestamp_acked, timestamp_ack_received);
 
 
   /*
