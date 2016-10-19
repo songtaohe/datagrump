@@ -274,6 +274,8 @@ template<typename type> double dir(type* ptr, int n)
   double ret = 0;
   type mmax = 0;
   type mmin = 0;
+  if(n <2) return 1000;
+
   for(int i = 0; i<n-1; i++)
   {
     ret = ret + ptr[i+1] - ptr[i];
@@ -387,16 +389,16 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   double w_target = 0;
   double w_ins = 40;
   
-  //double d_dir = 0;
-  //double d_std = 0;
+  double d_dir = 0;
+  double d_std = 0;
   double d_avg = 0;
 
 
 
   double mean_pf = 0;
   double mean_nf = 0;
-  //double std_pf = 0;
-  //double std_nf = 0;
+  double std_pf = 0;
+  double std_nf = 0;
 
   double feedback_pos = 0;
   double feedback_neg = 0;
@@ -414,7 +416,7 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
   static uint64_t TimeWindow = 20; // ms
   
   beta = P_BETA / 100.0; 
-
+  //beta = 0.035;
 // printf("%.2f %.2f %.2f\n",beta, P_L1+1.0, P_L2+1.0);
   
 
@@ -472,8 +474,8 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     //w_old_avg = Mean(window_list + counter - cur_win-1, cur_win+1); // FIXME
     //w_cur_avg = Mean(window_list + counter - window, window);
     
-    //d_dir = dir(delay_list + counter - cur_win, cur_win+1);
-    //d_std = Std(delay_list + counter - cur_win, cur_win+1);
+    d_dir = dir(delay_list + counter - cur_win, cur_win+1);
+    d_std = Std(delay_list + counter - cur_win, cur_win+1);
     d_avg = Mean(delay_list + counter - cur_win, cur_win+1);
 
     double mean_tp = P_L0 - alpha;
@@ -484,16 +486,19 @@ void Controller::ack_received_prediction( const uint64_t sequence_number_acked,
     mean_pf = (mean_pf - 1.0)*1.0 + 1.0;
     mean_nf = (mean_nf - 1.0)*1.0 + 1.0;
 
+    std_pf = min(max((40.0 - d_std) / 20.0, 0.0),10.0);
+    std_nf = 1.0 + max((d_std - 20.0) / 20.0, 0.0);
 
-    //std_pf = min(max((40.0 - d_std) / 20.0, 0.0),10.0);
-    //std_nf = 1.0 + max((d_std - 20.0) / 20.0, 0.0);
-
-    //feedback_pos = mean_pf * std_pf;
-    //feedback_neg = mean_nf * std_nf;
-
-    feedback_pos = mean_pf;
-    feedback_neg = mean_nf;
-
+    if(fabs(d_dir)<-0.01)
+    {
+      feedback_pos = mean_pf * std_pf;
+      feedback_neg = mean_nf * std_nf;
+    }
+    else
+    {
+      feedback_pos = mean_pf;
+      feedback_neg = mean_nf;
+    }
 
 
 
@@ -768,7 +773,7 @@ void* controller_thread(void* context)
   static int n = 0;
   double windowsize = 40;
   double old_thr = 0;
-  static double old_dly = 0;
+  //static double old_dly = 0;
   //static int old_send_counter = 0;
   int scale = 200;
   while(1)
@@ -783,19 +788,19 @@ void* controller_thread(void* context)
       double thr1 = 0;
 
       //double F_dly_std = 0;
-      double F_dly_avg = 0;
-      double F_dly_dir = 0;
+      //double F_dly_avg = 0;
+      //double F_dly_dir = 0;
 
-      double ML_X[ML_P];
-      double ML_result = 0;
-      int flag = 0;
+      //double ML_X[ML_P];
+      //double ML_result = 0;
+      //int flag = 0;
 
-      double ML_error = 1.0;
+      //double ML_error = 1.0;
 
       if(recv_counter - old_recv_counter_3 <=2)
       {
         state += 1; // outage;
-        __ML__(ML_X,1,&flag);
+       // __ML__(ML_X,1,&flag);
       }
       else
       {
@@ -805,17 +810,17 @@ void* controller_thread(void* context)
         if((thr1 - thr2) / thr2 > 1.5 ) thr1 = thr2; // Fix the potential mis-estimation
 
 	//F_dly_std = Std((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
-	F_dly_avg = Mean((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
-	F_dly_dir = dir((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+	//F_dly_avg = Mean((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
+	//F_dly_dir = dir((C->delay_list)+old_recv_counter_3, recv_counter - old_recv_counter_3);
 
         state = 0; 
 
-        ML_X[0] = thr1;
-        ML_X[1] = F_dly_avg;
-        ML_X[2] = max(F_dly_dir,0.0);
-        ML_X[3] = min(F_dly_dir,0.0);
+        //ML_X[0] = thr1;
+        //ML_X[1] = F_dly_avg;
+        //ML_X[2] = max(F_dly_dir,0.0);
+        //ML_X[3] = min(F_dly_dir,0.0);
 
-        ML_result = __ML__(ML_X,0,&flag);
+        //ML_result = __ML__(ML_X,0,&flag);
         
 
 
@@ -823,10 +828,10 @@ void* controller_thread(void* context)
 
 
 
-      ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5;
+      //ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5;
       //printf("%4d %4d %4d %15.6lf  %15.6lf  %15.6lf  %15.6lf %15.6lf %15.6lf %15.6lf \n",n, state, recv_counter - old_recv_counter_3, thr1, F_dly_avg, F_dly_std, F_dly_dir, ML_result, fabs(F_dly_avg - old_dly), ML_error);
       //ML_error = ML_error * 0.5 + fabs(F_dly_avg - old_dly)*0.5
-      old_dly = ML_result;
+      //old_dly = ML_result;
 
 
 
@@ -835,9 +840,10 @@ void* controller_thread(void* context)
       {
          C->link_status /= 2;
          //if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state == 41 || state == 51 || state == 64 || state == 78 || state > 95) windowsize = 6;
-         if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state >48) windowsize = 6;
+         //if(state == 3 || state == 7 || state == 12 || state == 19 || state == 31 || state >48) windowsize = 6;
          //if(state % 3 == 0) windowsize = 6;
-         else windowsize = 0;  
+         //else windowsize = 0;  
+         windowsize = 0;
       }
       else
       {
@@ -878,8 +884,10 @@ void* controller_thread(void* context)
       old_recv_counter = recv_counter;
     }   
 
-    int mask = 0;
+//    int mask = 1;
+
     //Smooth the windowsize
+    /*
     if(windowsize > C->window_size_float + 1.0)
     {
       double delta = windowsize - C->window_size_float;
@@ -893,9 +901,10 @@ void* controller_thread(void* context)
     else
     {
       if(mask) C->window_size_float = windowsize;    
-
+*/
+      C->window_size_float = windowsize;
       usleep(100*scale); // 100ms
-    }
+  //  }
   }
 }
 
